@@ -99,28 +99,9 @@ void loop() {
     if (radio.ACKRequested())
     {
       byte theNodeID = radio.SENDERID;
-      radio.sendACK();
+      radio.sendACK("ACK", 3); // Send ACK or CMD|key:value|....
       Serial.print(" : ACK sent to node# ");
       Serial.print(theNodeID);
-
-      // When a node requests an ACK, respond to the ACK
-      // and also send a packet requesting an ACK (every 3rd one only)
-      // This way both TX/RX NODE functions are tested on 1 end at the GATEWAY
-      if (ackCount++%3==0)
-      {
-        Serial.print(" Pinging node ");
-        Serial.print(theNodeID);
-        Serial.print(" : ACK...");
-        delay(3); //need this when sending right after reception .. ?
-        if (radio.sendWithRetry(theNodeID, "Test message from gateway", 25, 0)) // 0 = only 1 attempt, no retries
-        { 
-          Serial.print("ok!");
-        }
-        else 
-        {
-          Serial.print("nothing");
-        }
-      }
     }
     Serial.println();
     Blink(LED,3);
