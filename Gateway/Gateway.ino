@@ -25,9 +25,20 @@
   #define FLASH_SS      8 // and FLASH SS on D8
 #endif
 
+// Define sensor id types
+#define SOILMOISTURE    1
+#define TEMPERATURE     2
+#define HUMIDITY        3
+#define AMBIENTLIGHT    4
+
+#define VOLTAGE         100
+#define RADIOTEMP       101
+
+
 RFM69 radio;
 SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
 bool promiscuousMode = false; //set to 'true' to sniff all packets on the same network
+bool DEBUG = false;
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
@@ -39,22 +50,30 @@ void setup() {
   radio.encrypt(ENCRYPTKEY);
   radio.promiscuous(promiscuousMode);
   char buff[50];
-  sprintf(buff, "\nListening at %d Mhz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
-  Serial.println(buff);
+  if (DEBUG) {
+    sprintf(buff, "\nListening at %d Mhz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
+    Serial.println(buff);
+  }
 }
 
 byte ackCount=0;
 uint32_t packetCount = 0;
+
 void loop() {
+
   //process any serial input
   if (Serial.available() > 0)
   {
     char input = Serial.read();
-    if (input == 'r') //d=dump all register values
+    if (input == 'D') // D = print DEBUG info to serial
+      DEBUG = true;
+    if (input == 'd') // d = disable DEBUG mode
+      DEBUG = false;
+    if (input == 'r') // r = radio register values
       radio.readAllRegs();
-    if (input == 'E') //E=enable encryption
+    if (input == 'E') // E = enable encryption
       radio.encrypt(ENCRYPTKEY);
-    if (input == 'e') //e=disable encryption
+    if (input == 'e') // e =disable encryption
       radio.encrypt(null);
     if (input == 'p')
     {
@@ -65,53 +84,81 @@ void loop() {
     if (input == 't')
     {
       byte temperature =  radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
-      byte fTemp = 1.8 * temperature + 32; // 9/5=1.8
       Serial.print( "Radio Temp is ");
       Serial.print(temperature);
       Serial.print("C, ");
-      Serial.print(fTemp); //converting to F loses some resolution, obvious when C is on edge between 2 values (ie 26C=78F, 27C=80F)
-      Serial.println('F');
     }
   }
 
   if (radio.receiveDone())
   {
-    Serial.print("#[");
-    Serial.print(++packetCount);
-    Serial.print(']');
-    Serial.print('[');
-    Serial.print(radio.SENDERID, DEC);
-    Serial.print("] ");
-    if (promiscuousMode)
+    if (DEBUG) {
+      Serial.print("Packets:");
+      Serial.print(++packetCount);
+      Serial.print(" RX_RSSI:");
+      Serial.print(radio.RSSI);
+      Serial.print(" Sender ID:");
+      Serial.print(radio.SENDERID, DEC);
+
+      if (promiscuousMode)
+      {
+        Serial.print(" Target ID:");
+        Serial.print(radio.TARGETID, DEC);
+      }
+      Serial.println();
+      Serial.print("Received: ");
+      for (byte i = 0; i < radio.DATALEN; i++) 
+      {
+        Serial.print((char)radio.DATA[i]);
+      }
+      Serial.println();
+    } 
+    else 
     {
-      Serial.print("to [");
-      Serial.print(radio.TARGETID, DEC);
-      Serial.print("] ");
+      for (byte i = 0; i < radio.DATALEN; i++) 
+      {
+        Serial.print((char)radio.DATA[i]);
+      }
+      Serial.println();
     }
-    for (byte i = 0; i < radio.DATALEN; i++) 
-    {
-      Serial.print((char)radio.DATA[i]);
-    }
-    Serial.print("   [RX_RSSI:");
-    Serial.print(radio.RSSI);
-    Serial.print("]");
     
     if (radio.ACKRequested())
     {
-      byte theNodeID = radio.SENDERID;
       radio.sendACK("ACK", 3); // Send ACK or CMD|key:value|....
-      Serial.print(" : ACK sent to node# ");
-      Serial.print(theNodeID);
+      if (DEBUG) {
+        Serial.println();
+        Serial.print("ACK sent to node# ");
+        Serial.print(radio.SENDERID, DEC);
+      }
     }
-    Serial.println();
-    Blink(LED,3);
+    LEDPulse();
   }
 }
 
-void Blink(byte PIN, int DELAY_MS)
+
+void LEDBlink(int DELAY_MS)
+// turn LED on and off for DELAY_MS (LED blink)
 {
-  pinMode(PIN, OUTPUT);
-  digitalWrite(PIN,HIGH);
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, HIGH);
   delay(DELAY_MS);
-  digitalWrite(PIN,LOW);
+  digitalWrite(LED, LOW);
+  delay(DELAY_MS);
+}
+
+// LED Pulse fade in and out
+void LEDPulse() {
+  int i;
+  delay (88);
+  for (int i = 0; i < 128; i++) {
+    analogWrite(LED, i);
+    delay(12);
+  }
+
+  for (int i = 128; i > 0; i--) {
+    analogWrite(LED, i);
+    delay(12);       
+  }
+  digitalWrite(LED, LOW);
+  delay (128);
 }
