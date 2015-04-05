@@ -16,9 +16,6 @@
 #define NODEID        2    // unique for each node on same network
 #define NETWORKID     23  // the same on all nodes that talk to each other
 
-// LED Pin
-#define LED 9
-
 // LIght Sensor
 #define LIGHTREADPIN A2 // LDR analogue input pin
 #define LIGHTENABLEPIN 6 // output pin to turn on LDR
@@ -64,6 +61,17 @@ int VoltageADC;
 #endif
 
 #define SERIAL_BAUD   115200
+
+// Define sensor id types
+#define SOILMOISTURE    1
+#define TEMPERATURE     2
+#define HUMIDITY        3
+#define AMBIENTLIGHT    4
+
+#define VOLTAGE         100
+#define RADIOTEMP       101
+
+
 
 // Misc default values
 String SensorData; // sensor data STRING
@@ -126,7 +134,9 @@ void loop() {
   
   // Don't really need to sample battery voltage as regularly as other sensors, 
   // but we'll do it anyway so we are transmitting a consistent data set
-  float Voltage = GetBatteryLevel();
+  float BatteryVoltage = GetBatteryLevel();
+  char VoltagebufTemp[10];
+  dtostrf(BatteryVoltage,5,3,VoltagebufTemp); // convert float Voltage to string
 
   // Might as well sample the radio temperature sensor for diagnostic purposes
   byte radioTemperature =  radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
@@ -174,22 +184,33 @@ void loop() {
   delay (18);
   digitalWrite(LIGHTENABLEPIN, LOW); // turn off sensor
 
+
   // PREPARE READINGS FOR TRANSMISSION
   SensorData = String(NODEID);
   SensorData += ":";
   SensorData += ErrorLvl;
   SensorData += ":";
+  SensorData += SOILMOISTURE;
+  SensorData += ":";
   SensorData += String(moistREADavg);
+  SensorData += ":";
+  SensorData += TEMPERATURE;
   SensorData += ":";
   SensorData += String(dhttempc);
   SensorData += ":";
+  SensorData += HUMIDITY;
+  SensorData += ":";
   SensorData += String(dhthumid);
+  SensorData += ":";
+  SensorData += AMBIENTLIGHT;
   SensorData += ":";
   SensorData += String(lightlevel);
   SensorData += ":";
-  char VoltagebufTemp[10];
-  dtostrf(Voltage,5,3,VoltagebufTemp); // convert float Voltage to string
+  SensorData += VOLTAGE;
+  SensorData += ":";
   SensorData += VoltagebufTemp;
+  SensorData += ":";
+  SensorData += RADIOTEMP;
   SensorData += ":";
   SensorData += String(radioTemperature);
   byte sendSize = SensorData.length();
@@ -216,7 +237,7 @@ void loop() {
     }
     Serial.println();
     Serial.print("Gateway Responded: ");
-    Serial.println(ackString);
+    Serial.print(ackString);
     
     if (ackString == "CMD") {
       Serial.println("Received ACK CMD");
