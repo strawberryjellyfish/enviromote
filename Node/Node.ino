@@ -11,6 +11,7 @@
 #include <stdlib.h>   // maths
 #include <LowPower.h> // https://github.com/rocketscream/Low-Power
 #include <DHT.h>      // DHT sensor library
+#include <string>
 
 // Node setup
 #define GATEWAYID     1
@@ -73,13 +74,22 @@ float voltage;
 #define VOLTAGE         100
 #define RADIOTEMP       101
 
+// Error Codes
+#define LOW_BATTERY       1
+#define HIGH_RADIO_TEMP   2
+#define LOW_MOISTURE      4
+#define HIGH_MOISTURE     8
+#define LOW_TEMPERATURE   16
+#define HIGH_TEMPERATURE  32
+#define LOW_HUMIDITY      64
+#define HIGH_HUMIDITY     128
+
+// Only 6 error flags/bits used, so a char is fine
+unsigned char errorFlags;
 
 // Misc default values
 String sensorData; // sensor data STRING
-String errorLvl = "0"; // Error level. 0 = normal. 1 = soil moisture, 2 = Temperature , 3 = Humidity, 4 = Battery voltage
-
 int sleepCycle = 1; // How many lowpower library 8 second sleeps *450 = 1 hour
-
 RFM69 radio;
 
 
@@ -105,8 +115,8 @@ void setup() {
   dht.begin();
 
   // power on indicator
-  LEDBlink(80);
-  LEDBlink(80);
+  ledBlink(80);
+  ledBlink(80);
 
   // Initialize the radio
   radio.initialize(FREQUENCY, NODEID, NETWORKID);
@@ -130,15 +140,15 @@ void setup() {
 //  * sleep and repeat
 void loop() {
 
-  LEDPulse();
-  errorLvl = "0"; // Reset error level
+  ledPulse();
+  errorFlags = null; // Reset error level
   
   // Don't really need to sample battery voltage as regularly as other sensors, 
   // but we'll do it anyway so we are transmitting a consistent data set
-  GetBatteryLevel(voltage);
-  if (voltage < voltageLowThreshold){
-    errorLvl = "4";
-  }
+  getBatteryLevel(voltage);
+  if (voltage < voltageLowThreshold)
+    errorFlags |= LOW_BATTERY;
+
   char batteryVoltage[10];
   dtostrf(voltage,5,3,batteryVoltage); // convert float Voltage to string
 
@@ -149,16 +159,17 @@ void loop() {
   int moistReadAvg = 0; // reset the moisture level before reading
   int moistCycle = 3; // how many times to read the moisture level. default is 3 times
   for ( int moistReadCount = 0; moistReadCount < moistCycle; moistReadCount++ ) {
-    moistReadAvg += GetMoistureLevel();
+    moistReadAvg += getMoistureLevel();
   }
   moistReadAvg = moistReadAvg / moistCycle; // average the results
   
-  // if soil is below threshold, error level 1
-  if ( moistReadAvg < soilDryThreshold ) {
-    errorLvl += "1"; // assign error level
-    LEDBlink(128);
-    LEDBlink(128);
-    LEDBlink(128);
+  if ( moistReadAvg < soilDryThreshold ) 
+  {
+    errorFlags |= LOW_MOISTURE;
+  } 
+  else if ( moistReadAvg > soilWetThreshold ) 
+  {
+    errorFlags |= HIGH_MOISTURE;
   }
 
 
@@ -170,14 +181,26 @@ void loop() {
   int dhtTempC = dht.readTemperature(); // read temperature as Celsius
   int dhtHumid = dht.readHumidity(); // read humidity
   
-  // check if returns are valid, if they are NaN (not a number) then something went wrong!
-  if (isnan(dhtTempC) || isnan(dhtHumid) || dhtTempC == 0 || dhtHumid == 0 ) {
-    dhtTempC = 0;
-    dhtHumid = 0;
-    errorLvl += "23";
-  }
   delay (18);
   digitalWrite(DHTENABLEPIN, LOW); // turn off sensor
+
+  if ( dhtTempC < temperatureLowThreshold ) 
+  {
+    errorFlags |= LOW_TEMPERATURE;
+  } 
+  else if ( dhtTempC > temperatureHighThreshold ) 
+  {
+    errorFlags |= HIGH_TEMPERATURE;
+  }
+
+  if ( dhtHumid < humidityLowThreshold ) 
+  {
+    errorFlags |= LOW_HUMIDITY;
+  } 
+  else if ( dhtHumid > humidityHighThreshold ) 
+  {
+    errorFlags |= HIGH_HUMIDITY;
+  }
 
 
   // Coarse Light Level
@@ -191,7 +214,7 @@ void loop() {
   // PREPARE READINGS FOR TRANSMISSION
   sensorData = String(NODEID);
   sensorData += ":";
-  sensorData += errorLvl;
+  sensorData += int(errorFlags);
   sensorData += ":";
   sensorData += SOILMOISTURE;
   sensorData += ":";
@@ -258,11 +281,11 @@ void loop() {
 
   // Error Level handing
   // If any error level is generated, halve the sleep cycle
-  if ( errorLvl.toInt() > 0 ) {
+  if ( errorFlags != null ) {
     sleepCycle = sleepCycle / 2;
-    LEDBlink(30);
-    LEDBlink(30);
-    LEDBlink(30);
+    ledBlink(10);
+    ledBlink(10);
+    ledBlink(10);
   }
 
   Sleep();
@@ -283,7 +306,7 @@ void Sleep()
   }
 }
 
-void LEDBlink(int DELAY_MS)
+void ledBlink(int DELAY_MS)
 // turn LED on and off for DELAY_MS (LED blink)
 {
   pinMode(LED, OUTPUT);
@@ -294,7 +317,7 @@ void LEDBlink(int DELAY_MS)
 }
 
 // LED Pulse fade in and out
-void LEDPulse() {
+void ledPulse() {
   int i;
   delay (88);
   for (int i = 0; i < 128; i++) {
@@ -312,7 +335,7 @@ void LEDPulse() {
 
 // Moisture sensor reading function
 // function reads 3 times and averages the data
-int GetMoistureLevel() {
+int getMoistureLevel() {
   int moistReadDelay = 88; // delay to reduce capacitive effects
   int moistAvg = 0;
   // polarity 1 read
@@ -320,7 +343,6 @@ int GetMoistureLevel() {
   digitalWrite(MOISTPIN2, LOW);
   delay (moistReadDelay);
   int moistVal1 = analogRead(MOISTREADPIN);
-  //Serial.println(moistVal1);
   digitalWrite(MOISTPIN1, LOW);
   delay (moistReadDelay);
   // polarity 2 read
@@ -337,7 +359,7 @@ int GetMoistureLevel() {
 }
 
 // Battery level check, take 3 readings and use the last to allow circuit to stabilize after waking
-void GetBatteryLevel(float& voltage) {
+void getBatteryLevel(float& voltage) {
   pinMode(VOLTAGEENABLEPIN, OUTPUT); // change pin mode
   digitalWrite(VOLTAGEENABLEPIN, LOW); // turn on the battery meter (sink current)
   for ( int i = 0 ; i < 3 ; i++ ) {
