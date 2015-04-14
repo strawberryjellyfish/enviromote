@@ -124,11 +124,13 @@ void loop() {
     
     if (radio.ACKRequested())
     {
-      radio.sendACK("ACK", 3); // Send ACK or CMD|key:value|....
+      char* ackString = "CMD|1:10|";
+      radio.sendACK(ackString, strlen(ackString)); // Send ACK or CMD|key:value|....
       if (DEBUG) {
         Serial.println();
-        Serial.print("ACK sent to node# ");
-        Serial.print(radio.SENDERID, DEC);
+        Serial.print("ACK sent [");
+        Serial.print(ackString);
+        Serial.println("]");
       }
     }
     LEDPulse();

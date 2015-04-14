@@ -11,7 +11,7 @@
 #include <stdlib.h>   // maths
 #include <LowPower.h> // https://github.com/rocketscream/Low-Power
 #include <DHT.h>      // DHT sensor library
-#include <string>
+#include <string.h>
 
 // Node setup
 #define GATEWAYID     1
@@ -44,7 +44,7 @@ int humidityHighThreshold = 80; // Low humidity warning
 #define VOLTAGEENABLEPIN A3 // current sink pin. ( enable voltage divider )
 #define VOLTAGEREF 3.3 // reference voltage on system. use to calculate voltage from ADC
 #define VOLTAGEDIVIDER 2 // if you have a voltage divider to read voltages, enter the multiplier here.
-int voltageLowThreshold = 4; // low battery threshold. 4 volts.
+float voltageLowThreshold = 4; // low battery threshold. 4 volts.
 int voltageRead;
 float voltage;
 
@@ -115,8 +115,8 @@ void setup() {
   dht.begin();
 
   // power on indicator
-  ledBlink(80);
-  ledBlink(80);
+  ledBlink(50);
+  ledBlink(50);
 
   // Initialize the radio
   radio.initialize(FREQUENCY, NODEID, NETWORKID);
@@ -124,14 +124,14 @@ void setup() {
 
   #ifdef IS_RFM69HW
     radio.setHighPower(); //uncomment only for RFM69HW!
-    #endif
+  #endif
 
-    radio.sleep();
+  radio.sleep(); // ensure radio is off until we need it
 
-    char buff[50];
-    sprintf(buff, "\nTransmitting at %d Mhz...", FREQUENCY == RF69_433MHZ ? 433 : FREQUENCY == RF69_868MHZ ? 868 : 915);
-    Serial.println(buff);
-  }
+  char buff[50];
+  sprintf(buff, "\nTransmitting at %d Mhz...", FREQUENCY == RF69_433MHZ ? 433 : FREQUENCY == RF69_868MHZ ? 868 : 915);
+  Serial.println(buff);
+}
 
 // The main loop simply does this:
 //  * turn on sensors and take readings
@@ -146,11 +146,12 @@ void loop() {
   // Don't really need to sample battery voltage as regularly as other sensors, 
   // but we'll do it anyway so we are transmitting a consistent data set
   getBatteryLevel(voltage);
+
   if (voltage < voltageLowThreshold)
     errorFlags |= LOW_BATTERY;
 
   char batteryVoltage[10];
-  dtostrf(voltage,5,3,batteryVoltage); // convert float Voltage to string
+  dtostrf(voltage, 5, 3, batteryVoltage); // convert float Voltage to string
 
   // Might as well sample the radio temperature sensor for diagnostic purposes
   byte radioTemperature =  radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
@@ -177,11 +178,9 @@ void loop() {
   // Reading temperature or humidity takes about 250 milliseconds!
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
   digitalWrite(DHTENABLEPIN, HIGH); // turn on sensor
-  delay (38); // wait for sensor to stabilize
-  int dhtTempC = dht.readTemperature(); // read temperature as Celsius
+  delay (100); // wait for sensor to stabilize
   int dhtHumid = dht.readHumidity(); // read humidity
-  
-  delay (18);
+  int dhtTempC = dht.readTemperature(); // read temperature as Celsius
   digitalWrite(DHTENABLEPIN, LOW); // turn off sensor
 
   if ( dhtTempC < temperatureLowThreshold ) 
@@ -205,9 +204,7 @@ void loop() {
 
   // Coarse Light Level
   digitalWrite(LIGHTENABLEPIN, HIGH); // turn on sensor
-  delay (38); // wait for sensor to stabilize
   int lightLevel = 1023 - analogRead(LIGHTREADPIN);
-  delay (18);
   digitalWrite(LIGHTENABLEPIN, LOW); // turn off sensor
 
 
@@ -260,14 +257,72 @@ void loop() {
     {
       ackString += (char)radio.DATA[i];
     }
+    String ackType = ackString;
+    ackType = ackType.substring(0, 3);
     Serial.println();
     Serial.print("Gateway Responded: ");
-    Serial.print(ackString);
+    Serial.println(ackType);
     
-    if (ackString == "CMD" && radio.DATALEN > 3) {
-      Serial.println("Received ACK CMD");
-      // Gateway sent ACK with command.
-      // TODO: parse ackString and act as requested
+    // Gateway sent ACK with command.
+    if (ackType == "CMD") {
+      String cmdString = ackString.substring(3);
+      int startParse = 0;
+      int endParse = -1;
+      String thisCmd;
+      int cmd;
+      String value;
+      int sep;
+
+      do {
+        startParse = cmdString.indexOf("|", startParse);
+        if (startParse > -1) 
+        {
+          endParse = cmdString.indexOf("|", startParse + 1);
+          if (endParse > -1) 
+          {
+            thisCmd = cmdString.substring(startParse + 1, endParse);
+            sep = thisCmd.indexOf(":");
+            if (sep > -1) 
+            {
+              cmd = thisCmd.substring(0, sep).toInt();
+              value = thisCmd.substring(sep +1, thisCmd.length() + 1);
+              Serial.print("CMD ");
+              Serial.println(cmd);
+              Serial.print("VAL ");
+              Serial.println(value);
+
+              switch (cmd) {
+                case 1:
+                  sleepCycle = value.toInt();
+                  break;
+                case 2:
+                  voltageLowThreshold = value.toFloat();
+                  break;
+                case 3:
+                  temperatureLowThreshold = value.toInt();
+                  break;
+                case 4:
+                  temperatureHighThreshold = value.toInt();
+                  break;
+                case 5:
+                  humidityLowThreshold = value.toInt();
+                  break;
+                case 6:
+                  humidityHighThreshold = value.toInt();
+                  break;
+                case 7:
+                  soilDryThreshold = value.toInt();
+                  break;
+                case 8:
+                  soilWetThreshold = value.toInt();
+                  break;
+              }
+            }
+          }
+          startParse = endParse - 4;
+        }
+      } 
+      while (startParse > -1);
     }
   }
   else 
@@ -283,9 +338,9 @@ void loop() {
   // If any error level is generated, halve the sleep cycle
   if ( errorFlags != null ) {
     sleepCycle = sleepCycle / 2;
-    ledBlink(10);
-    ledBlink(10);
-    ledBlink(10);
+    ledBlink(50);
+    ledBlink(50);
+    ledBlink(50);
   }
 
   Sleep();
@@ -297,12 +352,14 @@ void Sleep()
   int currentSleep = sleepCycle + random(8); // Randomize sleep cycle a little to reduce collisions with other nodes
   Serial.print("Sleeping for ");
   Serial.print(currentSleep * 8);
-  Serial.println(" seconds");
+  Serial.print(" seconds (");
+  Serial.print(sleepCycle);
+  Serial.println(")");
   delay(5);
   radio.sleep(); // turn off radio  
   for ( int sleepTime = 0; sleepTime < currentSleep; sleepTime++ ) 
   {
-    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF); // sleep duration is 8 seconds multiply by the sleep cycle variable.
+    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF); // sleep duration is 8 seconds multiply by the sleep cycle variable.
   }
 }
 
