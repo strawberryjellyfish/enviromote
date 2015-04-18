@@ -34,11 +34,14 @@
 #define VOLTAGE         100
 #define RADIOTEMP       101
 
-
 RFM69 radio;
 SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
 bool promiscuousMode = false; //set to 'true' to sniff all packets on the same network
 bool DEBUG = false;
+bool configNode = false; //if true will send a configuration string to the node in response to a data burst
+int nodeId = 0; // ID of node to send config to. (0 = all nodes)
+String configString = "";
+
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
@@ -64,32 +67,81 @@ void loop() {
   //process any serial input
   if (Serial.available() > 0)
   {
+
     char input = Serial.read();
-    if (input == 'D') // D = print DEBUG info to serial
-      DEBUG = true;
-    if (input == 'd') // d = disable DEBUG mode
-      DEBUG = false;
-    if (input == 'r') // r = radio register values
-      radio.readAllRegs();
-    if (input == 'E') // E = enable encryption
-      radio.encrypt(ENCRYPTKEY);
-    if (input == 'e') // e =disable encryption
-      radio.encrypt(null);
-    if (input == 'p')
+
+    if (input == 'D')
     {
-      promiscuousMode = !promiscuousMode;
-      radio.promiscuous(promiscuousMode);
-      Serial.print("Promiscuous mode ");Serial.println(promiscuousMode ? "on" : "off");
+      DEBUG = true;
+      Serial.println("DEBUG: enabled");
     }
+
+    if (input == 'd')
+      DEBUG = false;
+
+    if (input == 'E')
+    {
+      radio.encrypt(ENCRYPTKEY);
+      if (DEBUG) 
+        Serial.println("Encryption: enabled");
+    }
+
+    if (input == 'e')
+    {
+      radio.encrypt(null);
+      if (DEBUG) 
+        Serial.println("Encryption: disabled");
+    }
+
+    if (input == 'P') // enable promiscuousMode
+    {
+      radio.promiscuous(false); 
+      if (DEBUG) 
+        Serial.println("Promiscuous mode: enabled");
+    }
+
+    if (input == 'p') // disable promiscuousMode
+    {
+      radio.promiscuous(false);
+      if (DEBUG) 
+        Serial.println("Promiscuous mode: disabled");
+    }
+
     if (input == 't')
     {
-      byte temperature =  radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
-      Serial.print( "Radio Temp is ");
+      byte temperature = radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
+      Serial.print( "Radio Temp: ");
       Serial.print(temperature);
-      Serial.print("C, ");
+      Serial.print("C");
+    }
+
+    if (input == 'r')
+    {
+      Serial.println("Radio Regs:");
+      radio.readAllRegs();
+    }
+
+    if (input == 'C') // c = configure remote node
+    {
+      String configString;
+      String configNode;
+      int startParse;
+      int endParse;
+
+      configString = Serial.readStringUntil('\n');
+      startParse = configString.indexOf("|", 0);
+
+      if (startParse > -1)
+      {
+        configNode = configString.substring(0, startParse);
+        endParse = configString.lastIndexOf("|");
+        if (endParse > -1) 
+          configString = configString.substring(startParse, configString.length() );
+      }
     }
   }
 
+  // process any received data
   if (radio.receiveDone())
   {
     if (DEBUG) {
@@ -115,6 +167,7 @@ void loop() {
     } 
     else 
     {
+      // Just relay the received data string to serial
       for (byte i = 0; i < radio.DATALEN; i++) 
       {
         Serial.print((char)radio.DATA[i]);
@@ -124,7 +177,8 @@ void loop() {
     
     if (radio.ACKRequested())
     {
-      char* ackString = "CMD|1:10|";
+      char* ackString ="ACK";
+      //char* ackString = "CMD|1:10|";
       radio.sendACK(ackString, strlen(ackString)); // Send ACK or CMD|key:value|....
       if (DEBUG) {
         Serial.println();

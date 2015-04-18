@@ -10,7 +10,7 @@
 #include <SPI.h>
 #include <stdlib.h>   // maths
 #include <LowPower.h> // https://github.com/rocketscream/Low-Power
-#include <DHT.h>      // DHT sensor library
+#include <DHT.h>      // https://github.com/adafruit/DHT-sensor-library
 #include <string.h>
 
 // Node setup
@@ -208,7 +208,7 @@ void loop() {
   digitalWrite(LIGHTENABLEPIN, LOW); // turn off sensor
 
 
-  // PREPARE READINGS FOR TRANSMISSION
+  // prepare readings for transmission
   sensorData = String(NODEID);
   sensorData += ":";
   sensorData += int(errorFlags);
@@ -274,6 +274,7 @@ void loop() {
       int sep;
 
       do {
+        // split ack string into command and value pairs
         startParse = cmdString.indexOf("|", startParse);
         if (startParse > -1) 
         {
@@ -291,6 +292,7 @@ void loop() {
               Serial.print("VAL ");
               Serial.println(value);
 
+              // update variables based on key value
               switch (cmd) {
                 case 1:
                   sleepCycle = value.toInt();
