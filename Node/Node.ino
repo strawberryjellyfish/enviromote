@@ -18,9 +18,15 @@
 #define NODEID        2    // unique for each node on same network
 #define NETWORKID     23  // the same on all nodes that talk to each other
 
-// LIght Sensor
+// Sensor Enable pin, set the pin high to enable sensors
+#define SENSORENABLEPIN 4 // Sensor enable pin
+
+// Light Sensor
 #define LIGHTREADPIN A2 // LDR analogue input pin
-#define LIGHTENABLEPIN 6 // output pin to turn on LDR
+
+// UV Sensor
+#define UVREADPIN A4 // LDR analogue input pin
+#define VOLTAGEREFPIN A5
 
 // Soil Moisture Sensor
 #define MOISTPIN1 1 // soil probe pin 1 with 56kohm resistor
@@ -31,7 +37,6 @@ int soilWetThreshold = 850; // High Soil Moisture warning
 
 // DHT Humidity + Temperature sensor
 #define DHTREADPIN 5 // Data pin (D5) for DHT
-#define DHTENABLEPIN 4 // Sensor enable pin
 #define DHTTYPE DHT11
 DHT dht(DHTREADPIN, DHTTYPE);
 int temperatureLowThreshold = 5; // Low Temperature warning
@@ -70,6 +75,7 @@ float voltage;
 #define TEMPERATURE     2
 #define HUMIDITY        3
 #define AMBIENTLIGHT    4
+#define UVLIGHT         5
 
 #define VOLTAGE         100
 #define RADIOTEMP       101
@@ -101,6 +107,9 @@ void setup() {
   //LED setup. 
   pinMode(LED, OUTPUT);
   
+  pinMode(UVREADPIN, INPUT);
+  pinMode(VOLTAGEREFPIN, INPUT);
+
   // Battery Meter setup
   pinMode(VOLTAGEREADPIN, INPUT);
   pinMode(VOLTAGEENABLEPIN, INPUT);
@@ -111,7 +120,7 @@ void setup() {
   pinMode(MOISTREADPIN, INPUT);
   
   // Humidity sensor setup
-  pinMode(DHTENABLEPIN, OUTPUT);
+  pinMode(SENSORENABLEPIN, OUTPUT);
   dht.begin();
 
   // power on indicator
@@ -154,7 +163,7 @@ void loop() {
   dtostrf(voltage, 5, 3, batteryVoltage); // convert float Voltage to string
 
   // Might as well sample the radio temperature sensor for diagnostic purposes
-  byte radioTemperature =  radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
+  byte radioTemperature = radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
   
   // Soil Moisture sensor reading
   int moistReadAvg = 0; // reset the moisture level before reading
@@ -177,11 +186,11 @@ void loop() {
   // Humidity + Temperature sensor reading
   // Reading temperature or humidity takes about 250 milliseconds!
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  digitalWrite(DHTENABLEPIN, HIGH); // turn on sensor
-  delay (100); // wait for sensor to stabilize
+  digitalWrite(SENSORENABLEPIN, HIGH); // turn on sensor
+  delay(100); // wait for sensor to stabilize
   int dhtHumid = dht.readHumidity(); // read humidity
   int dhtTempC = dht.readTemperature(); // read temperature as Celsius
-  digitalWrite(DHTENABLEPIN, LOW); // turn off sensor
+  digitalWrite(SENSORENABLEPIN, LOW); // turn off sensor
 
   if ( dhtTempC < temperatureLowThreshold ) 
   {
@@ -203,9 +212,39 @@ void loop() {
 
 
   // Coarse Light Level
-  digitalWrite(LIGHTENABLEPIN, HIGH); // turn on sensor
-  int lightLevel = 1023 - analogRead(LIGHTREADPIN);
-  digitalWrite(LIGHTENABLEPIN, LOW); // turn off sensor
+  // digitalWrite(SENSORENABLEPIN, HIGH); // turn on sensor
+  // int lightLevel = 1023 - analogRead(LIGHTREADPIN);
+  // digitalWrite(SENSORENABLEPIN, LOW); // turn off sensor
+
+
+  digitalWrite(SENSORENABLEPIN, HIGH);
+  int uvLevel = averageAnalogRead(UVREADPIN);
+  int refLevel = averageAnalogRead(VOLTAGEREFPIN);
+  
+  //Use the 3.3V power pin as a reference to get a very accurate output value from sensor
+  float outputVoltage = 3.3 / refLevel * uvLevel;
+  
+  float uvIntensity = mapfloat(outputVoltage, 0.99, 2.8, 0.0, 15.0); // Convert the voltage to a UV intensity level
+
+  int lightLevel = averageAnalogRead(LIGHTREADPIN);
+
+
+  // turn off sensors
+  digitalWrite(SENSORENABLEPIN, LOW);
+ 
+  // Serial.print("output: ");
+  // Serial.print(refLevel);
+
+  // Serial.print("ML8511 output: ");
+  // Serial.print(uvLevel);
+
+  // Serial.print(" / ML8511 voltage: ");
+  // Serial.print(outputVoltage);
+
+  // Serial.print(" / UV Intensity (mW/cm^2): ");
+  // Serial.print(uvIntensity);
+
+
 
 
   // prepare readings for transmission
@@ -228,6 +267,10 @@ void loop() {
   sensorData += AMBIENTLIGHT;
   sensorData += ":";
   sensorData += String(lightLevel);
+  sensorData += ":";
+  sensorData += UVLIGHT;
+  sensorData += ":";
+  sensorData += String(uvIntensity);
   sensorData += ":";
   sensorData += VOLTAGE;
   sensorData += ":";
@@ -319,9 +362,10 @@ void loop() {
                   soilWetThreshold = value.toInt();
                   break;
               }
+
             }
           }
-          startParse = endParse - 4;
+          startParse = endParse - 1;
         }
       } 
       while (startParse > -1);
@@ -348,8 +392,8 @@ void loop() {
   Sleep();
 }
 
-void Sleep()
 // Power Saving, go to sleep between data burst
+void Sleep()
 {
   int currentSleep = sleepCycle + random(8); // Randomize sleep cycle a little to reduce collisions with other nodes
   Serial.print("Sleeping for ");
@@ -361,12 +405,12 @@ void Sleep()
   radio.sleep(); // turn off radio  
   for ( int sleepTime = 0; sleepTime < currentSleep; sleepTime++ ) 
   {
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF); // sleep duration is 8 seconds multiply by the sleep cycle variable.
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF); // sleep duration is 8 seconds multiply by the sleep cycle variable.
   }
 }
 
-void ledBlink(int DELAY_MS)
 // turn LED on and off for DELAY_MS (LED blink)
+void ledBlink(int DELAY_MS)
 {
   pinMode(LED, OUTPUT);
   digitalWrite(LED, HIGH);
@@ -409,7 +453,7 @@ int getMoistureLevel() {
   digitalWrite(MOISTPIN2, HIGH);
   delay (moistReadDelay);
   int moistVal2 = analogRead(MOISTREADPIN);
-  //Make sure all the pins are off to save power
+  // Make sure all the pins are off to save power
   digitalWrite(MOISTPIN2, LOW);
   digitalWrite(MOISTPIN1, LOW);
   moistVal1 = 1023 - moistVal1; // invert the reading
@@ -427,4 +471,25 @@ void getBatteryLevel(float& voltage) {
   }
   voltage = ((voltageRead * VOLTAGEREF) / 1023) * VOLTAGEDIVIDER; // calculate the voltage
   pinMode(VOLTAGEENABLEPIN, INPUT); // turn off the battery meter
+}
+
+// Takes an average of readings on a given pin
+// Returns the average
+int averageAnalogRead(int pinToRead)
+{
+  byte numberOfReadings = 8;
+  unsigned int runningValue = 0; 
+
+  for(int x = 0 ; x < numberOfReadings ; x++)
+    runningValue += analogRead(pinToRead);
+  runningValue /= numberOfReadings;
+
+  return(runningValue);  
+}
+
+// The Arduino Map function but for floats
+// From: http://forum.arduino.cc/index.php?topic=3922.0
+float mapfloat(float x, float in_min, float in_max, float out_min, float out_max)
+{
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
