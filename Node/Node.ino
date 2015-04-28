@@ -63,7 +63,7 @@ float voltage;
 #ifdef __AVR_ATmega1284P__
   #define LED           15 // Moteino MEGAs have LEDs on D15
   #define FLASH_SS      23 // and FLASH SS on D23
-  #else
+#else
   #define LED           9 // Moteinos have LEDs on D9
   #define FLASH_SS      8 // and FLASH SS on D8
 #endif
@@ -249,33 +249,33 @@ void loop() {
 
   // prepare readings for transmission
   sensorData = String(NODEID);
-  sensorData += ":";
+  sensorData += "|";
   sensorData += int(errorFlags);
-  sensorData += ":";
+  sensorData += "|";
   sensorData += SOILMOISTURE;
   sensorData += ":";
   sensorData += String(moistReadAvg);
-  sensorData += ":";
+  sensorData += "|";
   sensorData += TEMPERATURE;
   sensorData += ":";
   sensorData += String(dhtTempC);
-  sensorData += ":";
+  sensorData += "|";
   sensorData += HUMIDITY;
   sensorData += ":";
   sensorData += String(dhtHumid);
-  sensorData += ":";
+  sensorData += "|";
   sensorData += AMBIENTLIGHT;
   sensorData += ":";
   sensorData += String(lightLevel);
-  sensorData += ":";
+  sensorData += "|";
   sensorData += UVLIGHT;
   sensorData += ":";
   sensorData += String(uvIntensity);
-  sensorData += ":";
+  sensorData += "|";
   sensorData += VOLTAGE;
   sensorData += ":";
   sensorData += batteryVoltage;
-  sensorData += ":";
+  sensorData += "|";
   sensorData += RADIOTEMP;
   sensorData += ":";
   sensorData += String(radioTemperature);

@@ -175,7 +175,7 @@ void loop() {
     else 
     {
       // Just relay the received data string to serial
-      Serial.print("DATA:");
+      Serial.print("DATA|");
       for (byte i = 0; i < radio.DATALEN; i++) 
       {
         Serial.print((char)radio.DATA[i]);
